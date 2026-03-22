@@ -22,6 +22,8 @@ dependencies:
   shared_preferences: ^2.3.4
   # PRODUCTION UPGRADE: Local notifications for stop alerts
   flutter_local_notifications: ^18.0.0
+  # FEATURE: Admin map search
+  geocoding: ^3.0.0
 
 dev_dependencies:
   flutter_test:

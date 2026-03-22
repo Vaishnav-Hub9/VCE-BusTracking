@@ -52,6 +52,10 @@ class _TrackerScreenState extends State<TrackerScreen> {
   bool _boarded = false;
   bool _hasNotifiedProximity = false;
 
+  BusStop? _selectedReminderStop; 
+  double _reminderDistanceMeters = 1000.0; // Default 1km
+  bool _isReminderActive = false;
+
   @override
   void initState() {
     super.initState();
@@ -67,26 +71,19 @@ class _TrackerScreenState extends State<TrackerScreen> {
   }
 
   Future<void> _initNotifications() async {
-    const AndroidInitializationSettings androidSettings =
-        AndroidInitializationSettings('@mipmap/launcher_icon');
-    const InitializationSettings initSettings =
-        InitializationSettings(android: androidSettings);
+    const AndroidInitializationSettings androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const InitializationSettings initSettings = InitializationSettings(android: androidSettings);
     await _notificationsPlugin.initialize(initSettings);
+    _notificationsPlugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()?.requestNotificationsPermission();
   }
 
-  Future<void> _triggerProximityNotification() async {
+  Future<void> _triggerBusAlert(String stopName) async {
     const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
-      'proximity_channel',
-      'Proximity Alerts',
-      importance: Importance.max,
-      priority: Priority.high,
+      'bus_alerts', 'Bus Arrivals', importance: Importance.max, priority: Priority.high,
     );
-    const NotificationDetails platformDetails = NotificationDetails(android: androidDetails);
     await _notificationsPlugin.show(
-      0,
-      'Bus Approaching!',
-      'Your bus is less than 500 meters away from your stop.',
-      platformDetails,
+      0, 'Bus Approaching! 🚌', 'Your bus is near $stopName.',
+      const NotificationDetails(android: androidDetails),
     );
   }
 
@@ -245,6 +242,22 @@ class _TrackerScreenState extends State<TrackerScreen> {
     _busSubscription =
         _firestoreService.getBusStream(widget.bus.id).listen((bus) {
       if (!mounted) return;
+
+      if (bus != null && bus.lat != null && bus.lng != null && 
+          _isReminderActive && _selectedReminderStop != null) {
+        double distance = Geolocator.distanceBetween(
+          bus.lat!, bus.lng!, 
+          _selectedReminderStop!.lat, _selectedReminderStop!.lng
+        );
+        if (distance <= _reminderDistanceMeters) {
+          _triggerBusAlert(_selectedReminderStop!.name);
+          setState(() {
+            _isReminderActive = false; // Turn off alarm so it doesn't spam
+            _selectedReminderStop = null;
+          });
+        }
+      }
+
       setState(() => _latestBus = bus);
       _updateMapIfReady();
     });
@@ -331,6 +344,7 @@ class _TrackerScreenState extends State<TrackerScreen> {
 
     final stopsJson = jsonEncode(routeData);
     _webController.runJavaScript('drawFixedRoute(${jsonEncode(stopsJson)});');
+    _webController.runJavaScript('drawStops(${jsonEncode(stopsJson)});');
     setState(() => _fixedRouteDrawn = true);
   }
 
@@ -384,7 +398,7 @@ class _TrackerScreenState extends State<TrackerScreen> {
     setState(() => _nearestStop = nearest);
 
     if (minDist < 500 && !_hasNotifiedProximity && _isNavigating) {
-      _triggerProximityNotification();
+      _triggerBusAlert(_nearestStop?.name ?? "your stop");
       _hasNotifiedProximity = true;
     }
   }
@@ -411,6 +425,84 @@ class _TrackerScreenState extends State<TrackerScreen> {
     );
   }
 
+  double _reminderMinutes = 1.0;
+
+  void _showReminderDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: const Row(
+                children: [
+                  Text('🔔 Remind Me', style: TextStyle(color: Colors.indigo, fontWeight: FontWeight.bold)),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (_stops.isEmpty)
+                    const Text('No stops available for this route.', style: TextStyle(color: Colors.red))
+                  else
+                    DropdownButton<BusStop>(
+                      isExpanded: true,
+                      hint: const Text('Select your stop'),
+                      value: _selectedReminderStop ?? _stops.first,
+                      items: _stops.map((stop) {
+                        return DropdownMenuItem<BusStop>(
+                          value: stop,
+                          child: Text(stop.name, overflow: TextOverflow.ellipsis),
+                        );
+                      }).toList(),
+                      onChanged: (val) {
+                        setDialogState(() => _selectedReminderStop = val);
+                      },
+                    ),
+                  const SizedBox(height: 16),
+                  Slider(
+                    value: _reminderDistanceMeters,
+                    min: 500,
+                    max: 3000,
+                    divisions: 5,
+                    activeColor: Colors.teal,
+                    onChanged: (val) {
+                      setDialogState(() => _reminderDistanceMeters = val);
+                    },
+                  ),
+                  Text('Alert me when bus is ${(_reminderDistanceMeters/1000).toStringAsFixed(1)} km away', 
+                    style: const TextStyle(color: Colors.teal),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+              actions: [
+  TextButton(
+    onPressed: () => Navigator.pop(context), 
+    child: const Text('Cancel', style: const TextStyle(color: Colors.grey))
+  ),
+  ElevatedButton(
+    style: ElevatedButton.styleFrom(backgroundColor: Colors.teal),
+    onPressed: () {
+      setState(() {
+        _isReminderActive = true;
+      });
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Reminder set for ${(_reminderDistanceMeters/1000).toStringAsFixed(1)} km!'))
+      );
+    },
+    child: const Text('Create', style: const TextStyle(color: Colors.white)),
+  ),
+],
+            );
+          }
+        );
+      }
+    );
+  }
+
   // ─── BUILD ────────────────────────────────────────────────────────────────
 
   @override
@@ -427,6 +519,10 @@ class _TrackerScreenState extends State<TrackerScreen> {
         foregroundColor: Colors.white,
         elevation: 0,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.notifications_active),
+            onPressed: () => _showReminderDialog(context),
+          ),
           Container(
             margin: const EdgeInsets.only(right: 12),
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -466,7 +562,23 @@ class _TrackerScreenState extends State<TrackerScreen> {
       body: Stack(
         children: [
           // Map
-          WebViewWidget(controller: _webController),
+          Stack(
+            children: [
+              WebViewWidget(controller: _webController),
+              Positioned(
+                top: 16,
+                right: 16,
+                child: FloatingActionButton(
+                  mini: true,
+                  backgroundColor: Colors.white,
+                  onPressed: () {
+                    _webController.runJavaScript('recenterCamera()');
+                  },
+                  child: const Icon(Icons.refresh, color: Colors.teal),
+                ),
+              ),
+            ],
+          ),
 
           // Phase 5: off-route banner
           if (_busOffRoute && !_boarded)
