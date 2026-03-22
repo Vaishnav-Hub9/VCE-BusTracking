@@ -5,6 +5,7 @@ import 'dart:math' show asin, atan2, cos, pi, sin, sqrt;
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/bus_model.dart';
 import '../models/bus_stop_model.dart';
 import '../services/firestore_service.dart';
@@ -23,7 +24,6 @@ class _TrackerScreenState extends State<TrackerScreen> {
   final _firestoreService = FirestoreService();
   final FlutterLocalNotificationsPlugin _notificationsPlugin = FlutterLocalNotificationsPlugin();
 
-  StreamSubscription<Bus?>? _busSubscription;
   StreamSubscription<Position>? _positionStream;
   StreamSubscription<List<BusStop>>? _stopsSubscription;
 
@@ -145,7 +145,6 @@ class _TrackerScreenState extends State<TrackerScreen> {
 
   @override
   void dispose() {
-    _busSubscription?.cancel();
     _positionStream?.cancel();
     _stopsSubscription?.cancel();
     super.dispose();
@@ -222,28 +221,23 @@ class _TrackerScreenState extends State<TrackerScreen> {
           });
         },
       )
-      // Phase 5: boarding detected via JS
-      ..addJavaScriptChannel(
-        'BoardingDetected',
-        onMessageReceived: (JavaScriptMessage msg) {
-          if (!mounted) return;
-          _handleInitialBoarding(); // Use the same method to route to destination
-          setState(() {
-            _isNavigating = false;
-          });
-        },
-      )
+      // Phase 5: boarding detection via JS - REMOVED per strict instructions
+      // Students must manually click the dialog button to set boarded status.
+
       ..loadFlutterAsset('assets/map.html');
   }
 
   // ─── TRACKING ─────────────────────────────────────────────────────────────
 
-  void _startTracking() {
-    _busSubscription =
-        _firestoreService.getBusStream(widget.bus.id).listen((bus) {
+  Future<void> _fetchBusLocation() async {
+    try {
+      final doc = await FirebaseFirestore.instance.collection('buses').doc(widget.bus.id).get();
+      if (!doc.exists) return;
+      
+      final bus = Bus.fromFirestore(doc);
       if (!mounted) return;
 
-      if (bus != null && bus.lat != null && bus.lng != null && 
+      if (bus.lat != null && bus.lng != null && 
           _isReminderActive && _selectedReminderStop != null) {
         double distance = Geolocator.distanceBetween(
           bus.lat!, bus.lng!, 
@@ -260,7 +254,17 @@ class _TrackerScreenState extends State<TrackerScreen> {
 
       setState(() => _latestBus = bus);
       _updateMapIfReady();
-    });
+      
+      if (_mapReady) {
+        _webController.runJavaScript('recenterCamera();');
+      }
+    } catch (e) {
+      debugPrint('Error fetching bus location: $e');
+    }
+  }
+
+  void _startTracking() {
+    _fetchBusLocation();
 
     _initUserLocation();
 
@@ -519,6 +523,16 @@ class _TrackerScreenState extends State<TrackerScreen> {
         foregroundColor: Colors.white,
         elevation: 0,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Refresh Location',
+            onPressed: () async {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Getting latest location...'), duration: Duration(seconds: 1)),
+              );
+              await _fetchBusLocation();
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.notifications_active),
             onPressed: () => _showReminderDialog(context),

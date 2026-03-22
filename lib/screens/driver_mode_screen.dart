@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:geolocator/geolocator.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/bus_model.dart';
 import '../services/auth_service.dart';
 import '../services/firestore_service.dart';
@@ -162,6 +164,10 @@ class _DriverModeScreenState extends State<DriverModeScreen> {
       // Phase 9: start session logging (fire-and-forget)
       _startSessionLogging(userId: userId, userName: userName);
 
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('active_bus_id', widget.bus.id);
+      FlutterBackgroundService().startService();
+
       setState(() {
         _isClaiming = false;
         _isDriving = true;
@@ -231,8 +237,11 @@ class _DriverModeScreenState extends State<DriverModeScreen> {
       }
     }
     if (permission == LocationPermission.deniedForever) {
-      _showError('Location permission permanently denied. Open Settings to enable.');
+      _showError('Location permission permanently denied. Open Settings to enable "Allow all the time".');
       return;
+    }
+    if (permission == LocationPermission.whileInUse) {
+      _showError('Background tracking requires "Allow all the time" access. Please update in App Settings.');
     }
 
     debugPrint('[DriverMode] Permission granted — starting position stream');
@@ -295,6 +304,10 @@ class _DriverModeScreenState extends State<DriverModeScreen> {
     debugPrint('[DriverMode] _stopDriving() called');
     await _positionStream?.cancel();
     _positionStream = null;
+
+    FlutterBackgroundService().invoke("stopService");
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('active_bus_id');
 
     // Resolve driver identity for bus release
     final driverId = widget.driverId ?? _authService.currentUser?.uid;

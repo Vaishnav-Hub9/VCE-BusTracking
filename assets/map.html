@@ -149,19 +149,19 @@
             if (!map) return;
             map.panTo(pos);
             map.setZoom(17);
-            
+
             if (typeof pickerMarker !== 'undefined' && pickerMarker) {
-              pickerMarker.setPosition(pos);
+                pickerMarker.setPosition(pos);
             } else {
-              pickerMarker = new google.maps.Marker({
-                position: pos,
-                map: map,
-                draggable: false
-              });
+                pickerMarker = new google.maps.Marker({
+                    position: pos,
+                    map: map,
+                    draggable: false
+                });
             }
-            
+
             if (typeof window.LocationPicked !== 'undefined' && window.LocationPicked) {
-              window.LocationPicked.postMessage(JSON.stringify({ lat: parseFloat(lat), lng: parseFloat(lng) }));
+                window.LocationPicked.postMessage(JSON.stringify({ lat: parseFloat(lat), lng: parseFloat(lng) }));
             }
         }
 
@@ -360,7 +360,7 @@
         // Phase 10 Custom Stops Rendering
         function drawStops(stopsJson) {
             if (!map) return;
-            stopMarkers.forEach(function(m) { m.setMap(null); });
+            stopMarkers.forEach(function (m) { m.setMap(null); });
             stopMarkers = [];
             try {
                 let parsedStops = JSON.parse(stopsJson);
@@ -544,7 +544,7 @@
         src="https://maps.googleapis.com/maps/api/js?key=YOUR_API_KEY&libraries=geometry,directions&callback=initMap"
         async defer>
         </script>
-        
+
     <script>
         function recenterCamera() {
             if (busMarker) {

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../services/auth_service.dart';
 import 'signup_screen.dart';
 import 'bus_list_screen.dart';
@@ -65,6 +66,77 @@ class _LoginScreenState extends State<LoginScreen> {
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  Future<void> _resetPassword() async {
+    final TextEditingController emailResetController = TextEditingController();
+
+    // Show a pop-up dialog asking for their email
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Reset Password'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Enter your college email to receive a password reset link.'),
+            const SizedBox(height: 16),
+            TextField(
+              controller: emailResetController,
+              keyboardType: TextInputType.emailAddress,
+              decoration: InputDecoration(
+                labelText: 'Email',
+                prefixIcon: const Icon(Icons.email_outlined),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context), // Close dialog
+            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF1A237E),
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () async {
+              final email = emailResetController.text.trim();
+              if (email.isNotEmpty) {
+                try {
+                  // This is the magic Firebase line
+                  await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+                  
+                  if (context.mounted) {
+                    Navigator.pop(context); // Close dialog
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Password reset link sent! Check your email.'),
+                        backgroundColor: Colors.green,
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Error: ${e.toString()}'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                }
+              }
+            },
+            child: const Text('Send Link'),
+          ),
+        ],
+      ),
+    );
   }
 @override
   Widget build(BuildContext context) {
@@ -223,6 +295,22 @@ class _LoginScreenState extends State<LoginScreen> {
                               }
                               return null;
                             },
+                          ),
+                          const SizedBox(height: 24),
+
+                          // Forgot Password Button
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton(
+                              onPressed: _resetPassword,
+                              child: const Text(
+                                'Forgot Password?',
+                                style: TextStyle(
+                                  color: Color(0xFF1A237E),
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
                           ),
                           const SizedBox(height: 24),
 

@@ -108,7 +108,7 @@ class _BusListScreenState extends State<BusListScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Select a bus to drive or track',
+                  'Select a bus to track',
                   style: TextStyle(
                     color: Colors.white.withAlpha(160),
                     fontSize: 14,
