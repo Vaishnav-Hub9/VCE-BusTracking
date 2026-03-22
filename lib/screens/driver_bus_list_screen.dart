@@ -25,6 +25,8 @@ class DriverBusListScreen extends StatefulWidget {
 
 class _DriverBusListScreenState extends State<DriverBusListScreen> {
   final _firestoreService = FirestoreService();
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
 
   Future<void> _logout() async {
     final confirm = await showDialog<bool>(
@@ -146,7 +148,26 @@ class _DriverBusListScreenState extends State<DriverBusListScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                hintText: 'Search buses or routes...',
+                prefixIcon: const Icon(Icons.search),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                filled: true,
+                fillColor: Colors.grey[100],
+              ),
+              onChanged: (value) {
+                setState(() {
+                  _searchQuery = value.toLowerCase();
+                });
+              },
+            ),
+          ),
 
           // Bus list
           Expanded(
@@ -176,7 +197,15 @@ class _DriverBusListScreenState extends State<DriverBusListScreen> {
                   );
                 }
 
-                final buses = snapshot.data ?? [];
+                var buses = snapshot.data ?? [];
+                
+                if (_searchQuery.isNotEmpty) {
+                  buses = buses.where((bus) {
+                    final busName = bus.name.toLowerCase();
+                    final routeName = bus.route.toLowerCase();
+                    return busName.contains(_searchQuery) || routeName.contains(_searchQuery);
+                  }).toList();
+                }
 
                 if (buses.isEmpty) {
                   return Center(
@@ -186,14 +215,14 @@ class _DriverBusListScreenState extends State<DriverBusListScreen> {
                         Icon(Icons.directions_bus_outlined,
                             size: 64, color: Colors.grey.shade300),
                         const SizedBox(height: 16),
-                        Text('No buses available',
+                        Text(_searchQuery.isNotEmpty ? 'No routes found' : 'No buses available',
                             style: TextStyle(
                                 color: Colors.grey.shade600,
                                 fontSize: 17,
                                 fontWeight: FontWeight.w500)),
                         const SizedBox(height: 6),
                         Text(
-                          'Buses will appear here once added by admin.',
+                          _searchQuery.isNotEmpty ? 'Try adjusting your search query.' : 'Buses will appear here once added by admin.',
                           textAlign: TextAlign.center,
                           style: TextStyle(
                               color: Colors.grey.shade500, fontSize: 13),

@@ -27,9 +27,11 @@
 
         // live tracking
         var liveDirectionsRenderer, busMarker, userMarker;
+        var pickerMarker;
 
         // fixed route polyline + stop markers
         var fixedRouteRenderer, fixedRouteStopMarkers = [];
+        let stopMarkers = [];
 
         // walking nav
         var walkRenderer;
@@ -115,7 +117,7 @@
                 mapTypeControl: false
             });
 
-            var marker = new google.maps.Marker({
+            pickerMarker = new google.maps.Marker({
                 position: centerPos,
                 map: map,
                 title: 'Selected Location',
@@ -131,8 +133,8 @@
             });
 
             // Update marker on click and dispatch to Flutter
-            map.addListener('click', function(e) {
-                marker.setPosition(e.latLng);
+            map.addListener('click', function (e) {
+                pickerMarker.setPosition(e.latLng);
                 if (window.LocationPicked) {
                     window.LocationPicked.postMessage(JSON.stringify({
                         lat: e.latLng.lat(),
@@ -140,6 +142,27 @@
                     }));
                 }
             });
+        }
+
+        function searchAndDropPin(lat, lng) {
+            var pos = { lat: parseFloat(lat), lng: parseFloat(lng) };
+            if (!map) return;
+            map.panTo(pos);
+            map.setZoom(17);
+            
+            if (typeof pickerMarker !== 'undefined' && pickerMarker) {
+              pickerMarker.setPosition(pos);
+            } else {
+              pickerMarker = new google.maps.Marker({
+                position: pos,
+                map: map,
+                draggable: false
+              });
+            }
+            
+            if (typeof window.LocationPicked !== 'undefined' && window.LocationPicked) {
+              window.LocationPicked.postMessage(JSON.stringify({ lat: parseFloat(lat), lng: parseFloat(lng) }));
+            }
         }
 
         // ─── PHASE 1: DRAW FIXED ROUTE WITH STOPS ────────────────────────────────
@@ -262,24 +285,19 @@
             }
 
             // bus marker
-            if (busMarker) {
-                busMarker.setPosition(busPos);
-            } else {
+            if (!busMarker) {
                 busMarker = new google.maps.Marker({
-                    position: busPos,
+                    position: { lat: parseFloat(busLat), lng: parseFloat(busLng) },
                     map: map,
-                    title: 'Bus',
-                    icon: {
-                        url: 'https://cdn-icons-png.flaticon.com/512/5759/5759248.png',
-                        scaledSize: new google.maps.Size(50, 50),
-                        anchor: new google.maps.Point(25, 25)
-                    },
-                    zIndex: 6
+                    icon: "https://maps.google.com/mapfiles/kml/shapes/bus.png"
                 });
                 busMarker.addListener('click', function () {
                     new google.maps.InfoWindow({ content: '<b>Bus Location</b>' })
                         .open(map, busMarker);
                 });
+            } else {
+                busMarker.setPosition({ lat: parseFloat(busLat), lng: parseFloat(busLng) });
+                busMarker.setIcon("https://maps.google.com/mapfiles/kml/shapes/bus.png");
             }
 
             // If boarded and we have a destination, route from bus to destination
@@ -337,6 +355,33 @@
             _checkOffRoute(busLat, busLng);
             _checkStopArrival(userLat, userLng);
             _checkBoarding(userLat, userLng, busLat, busLng);
+        }
+
+        // Phase 10 Custom Stops Rendering
+        function drawStops(stopsJson) {
+            if (!map) return;
+            stopMarkers.forEach(function(m) { m.setMap(null); });
+            stopMarkers = [];
+            try {
+                let parsedStops = JSON.parse(stopsJson);
+                parsedStops.forEach(stop => {
+                    let m = new google.maps.Marker({
+                        position: { lat: parseFloat(stop.lat), lng: parseFloat(stop.lng) },
+                        map: map,
+                        icon: {
+                            path: google.maps.SymbolPath.CIRCLE,
+                            scale: 6,
+                            fillColor: "green",
+                            fillOpacity: 1,
+                            strokeWeight: 2,
+                            strokeColor: "white"
+                        }
+                    });
+                    stopMarkers.push(m);
+                });
+            } catch (e) {
+                console.error("Error parsing stops JSON:", e);
+            }
         }
 
         // Called from Flutter when no user GPS yet
@@ -499,6 +544,15 @@
         src="https://maps.googleapis.com/maps/api/js?key=YOUR_API_KEY&libraries=geometry,directions&callback=initMap"
         async defer>
         </script>
+        
+    <script>
+        function recenterCamera() {
+            if (busMarker) {
+                map.panTo(busMarker.getPosition());
+                map.setZoom(16);
+            }
+        }
+    </script>
 
 </body>
 

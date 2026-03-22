@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:geocoding/geocoding.dart';
 import '../models/bus_model.dart';
 import '../models/bus_stop_model.dart';
 import '../services/firestore_service.dart';
@@ -14,6 +16,8 @@ class AdminPanelScreen extends StatefulWidget {
 
 class _AdminPanelScreenState extends State<AdminPanelScreen> {
   final _firestoreService = FirestoreService();
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
 
   // ─── ADD BUS DIALOG (two-step) ───────────────────────────────────────────
 
@@ -918,24 +922,71 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     }
   }
 
+  Future<void> _showLogoutConfirmation(BuildContext context) async {
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: const Text('Logout'),
+          content: const Text('Are you sure you want to logout?'),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('Cancel'),
+              onPressed: () {
+                Navigator.of(dialogContext).pop(); // Closes the dialog
+              },
+            ),
+            TextButton(
+              child: const Text('Logout', style: TextStyle(color: Colors.red)),
+              onPressed: () async {
+                Navigator.of(dialogContext).pop(); // Closes the dialog FIRST
+                await FirebaseAuth.instance.signOut();
+                
+                if (context.mounted) {
+                  // This forces the app all the way back to your root/login screen
+                  Navigator.of(context).popUntil((route) => route.isFirst);
+                }
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   // ─── BUILD ────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
       length: 2,
-      child: Scaffold(
-        backgroundColor: const Color(0xFFF5F7FA),
-        appBar: AppBar(
-          title: const Text(
-            'Admin Panel',
-            style: TextStyle(fontWeight: FontWeight.bold),
-          ),
-          centerTitle: true,
-          backgroundColor: const Color(0xFF1A237E),
-          foregroundColor: Colors.white,
-          elevation: 0,
-          bottom: const TabBar(
+      child: PopScope(
+        canPop: false,
+        onPopInvoked: (didPop) async {
+          if (!didPop) {
+            _showLogoutConfirmation(context);
+          }
+        },
+        child: Scaffold(
+          backgroundColor: const Color(0xFFF5F7FA),
+          appBar: AppBar(
+            automaticallyImplyLeading: false,
+            title: const Text(
+              'Admin Panel',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            centerTitle: true,
+            backgroundColor: const Color(0xFF1A237E),
+            foregroundColor: Colors.white,
+            elevation: 0,
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.logout),
+                onPressed: () => _showLogoutConfirmation(context),
+              ),
+            ],
+            bottom: const TabBar(
             indicatorColor: Colors.white,
             labelColor: Colors.white,
             unselectedLabelColor: Colors.white60,
@@ -959,6 +1010,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
           onAddDriver: _showAddDriverDialog,
         ),
       ),
+      ),
     );
   }
 
@@ -980,7 +1032,25 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
             style: TextStyle(color: Colors.white.withAlpha(210), fontSize: 14),
           ),
         ),
-        const SizedBox(height: 8),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: TextField(
+            controller: _searchController,
+            decoration: InputDecoration(
+              hintText: 'Search buses or routes...',
+              prefixIcon: const Icon(Icons.search),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              filled: true,
+              fillColor: Colors.white,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+            ),
+            onChanged: (val) {
+              setState(() {
+                _searchQuery = val.trim().toLowerCase();
+              });
+            },
+          ),
+        ),
         Expanded(
           child: StreamBuilder<List<Bus>>(
             stream: _firestoreService.getBusesStream(),
@@ -989,10 +1059,21 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                 return const Center(
                     child: CircularProgressIndicator(color: Color(0xFF1A237E)));
               }
-              final buses = snapshot.data ?? [];
+              
+              var buses = snapshot.data ?? [];
+              if (_searchQuery.isNotEmpty) {
+                buses = buses.where((bus) {
+                  final nameMatches = bus.name.toLowerCase().contains(_searchQuery);
+                  final routeMatches = bus.route.toLowerCase().contains(_searchQuery);
+                  final startMatches = (bus.startName ?? '').toLowerCase().contains(_searchQuery);
+                  final endMatches = (bus.endName ?? '').toLowerCase().contains(_searchQuery);
+                  return nameMatches || routeMatches || startMatches || endMatches;
+                }).toList();
+              }
+
               if (buses.isEmpty) {
-                return const Center(
-                    child: Text('No buses yet. Tap + to add one.'));
+                return Center(
+                    child: Text(_searchQuery.isEmpty ? 'No buses yet. Tap + to add one.' : 'No routes matched your search.'));
               }
               return ListView.builder(
                 padding:
@@ -2243,6 +2324,27 @@ class MapPickerModal extends StatefulWidget {
 
 class _MapPickerModalState extends State<MapPickerModal> {
   late final WebViewController _webController;
+  final TextEditingController _searchController = TextEditingController();
+
+  Future<void> _performSearch() async {
+    final query = _searchController.text.trim();
+    if (query.isNotEmpty) {
+      try {
+        List<Location> locations = await locationFromAddress("$query, Hyderabad, Telangana");
+        if (locations.isNotEmpty) {
+          double lat = locations.first.latitude;
+          double lng = locations.first.longitude;
+          _webController.runJavaScript('searchAndDropPin($lat, $lng)');
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Location not found. Try a different name.')),
+          );
+        }
+      }
+    }
+  }
 
   @override
   void initState() {
@@ -2278,34 +2380,43 @@ class _MapPickerModalState extends State<MapPickerModal> {
       child: SizedBox(
         height: MediaQuery.of(context).size.height * 0.7,
         width: MediaQuery.of(context).size.width,
-        child: Stack(
-          children: [
-            WebViewWidget(controller: _webController),
-            Positioned(
-              top: 10,
-              right: 10,
-              child: FloatingActionButton.small(
-                onPressed: () => Navigator.pop(context),
-                backgroundColor: Colors.white,
-                child: const Icon(Icons.close, color: Colors.black),
+        child: Scaffold(
+          appBar: AppBar(
+            backgroundColor: const Color(0xFF1A237E),
+            foregroundColor: Colors.white,
+            elevation: 0,
+            title: TextField(
+              controller: _searchController,
+              style: const TextStyle(color: Colors.white),
+              decoration: const InputDecoration(
+                hintText: 'Search stop (e.g., Koti)',
+                hintStyle: TextStyle(color: Colors.white70),
+                border: InputBorder.none,
               ),
+              onSubmitted: (_) => _performSearch(),
             ),
-            Positioned(
-              top: 10,
-              left: 10,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.white.withAlpha(200),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Text(
-                  'Tap map to pick location',
-                  style: TextStyle(fontWeight: FontWeight.bold),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.search),
+                onPressed: _performSearch,
+              ),
+            ],
+          ),
+          body: Stack(
+            children: [
+              WebViewWidget(controller: _webController),
+              Positioned(
+                bottom: 16,
+                right: 16,
+                child: FloatingActionButton.extended(
+                  onPressed: () => Navigator.pop(context), // Let them fallback to exit if no mark click triggers early pop
+                  label: const Text('Cancel / Close'),
+                  icon: const Icon(Icons.close),
+                  backgroundColor: Colors.white,
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

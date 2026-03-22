@@ -66,10 +66,22 @@ class _LoginScreenState extends State<LoginScreen> {
       if (mounted) setState(() => _isLoading = false);
     }
   }
-
-  @override
+@override
   Widget build(BuildContext context) {
     return Scaffold(
+      extendBodyBehindAppBar: true, // Allows the gradient to flow under the app bar
+      appBar: AppBar(
+        backgroundColor: Colors.transparent, // Makes the app bar invisible
+        elevation: 0, // Removes the drop shadow
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white),
+          onPressed: () {
+            if (Navigator.canPop(context)) {
+              Navigator.pop(context); // Goes back to the previous screen (Role Selection)
+            }
+          },
+        ),
+      ),
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
