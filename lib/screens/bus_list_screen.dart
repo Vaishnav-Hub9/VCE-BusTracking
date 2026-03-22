@@ -142,6 +142,17 @@ class _BusListScreenState extends State<BusListScreen> {
               decoration: InputDecoration(
                 hintText: 'Search buses, routes, locations...',
                 prefixIcon: const Icon(Icons.search, color: Color(0xFF1A237E)),
+                suffixIcon: _searchQuery.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear, color: Colors.grey),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() {
+                            _searchQuery = '';
+                          });
+                        },
+                      )
+                    : null,
                 filled: true,
                 fillColor: Colors.white,
                 contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 20),
